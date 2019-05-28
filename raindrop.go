@@ -28,7 +28,7 @@ func main() {
 
 	config = new(model.Config)
 
-	config.LoadConfiguration("./main/config.json")
+	config.LoadConfiguration("./config.json")
 
 	initRaindrop()
 
