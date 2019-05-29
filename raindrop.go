@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/natefinch/lumberjack"
 	"log"
 	"os"
 	"raindrop/main/model"
@@ -35,12 +36,18 @@ func initRaindrop() {
 	fmt.Println(printUtil.PrettyPrint(config))
 
 	f, err := os.OpenFile("raindrop.log",
-		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Println(err)
 	}
 
 	logger := log.New(f, "RainDrop : ", log.LstdFlags)
+	logger.SetOutput(&lumberjack.Logger{
+		Filename:   "./raindrop.log",
+		MaxSize:    10, // megabytes after which new file is created
+		MaxBackups: 3, // number of backups
+		MaxAge:     31, //days
+	})
 	logger.Println("Start raindrop")
 
 	larryRunner = new(strategy.LarryRunner)
