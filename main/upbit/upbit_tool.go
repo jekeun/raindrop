@@ -33,11 +33,14 @@ func GetCoinsFromOrders(orders []*types.Order) (coins []string) {
 	return
 }
 
+/*
+ * 매도 가능 잔고
+ */
 func GetBalanceCoinsCanAsk(balances []*types.Balance) (coins []string) {
 	coins = make([]string, 0)
 
 	for _, value := range balances {
-		// 원하는 매도 가능 잔고가 아님.
+		// KRW는 매도 가능 잔고가 아님.
 		if value.Currency == "KRW" {
 			continue
 		}
@@ -76,3 +79,28 @@ func AskOrder(client *upbit.Client, coin string, balance string, candle *types.D
 
 }
 
+func GetPriceCanOrder(price float64) (orderPriceStr string) {
+
+	switch {
+	case price >= 2000000:
+		orderPriceStr = fmt.Sprintf("%d", int(price/1000) * 1000)
+	case price >= 1000000 && price < 2000000:
+		orderPriceStr = fmt.Sprintf("%d", int(price/1000) * 1000)
+	case price >= 500000 && price < 1000000:
+		orderPriceStr = fmt.Sprintf("%d", int(price/100) * 100)
+	case price >= 100000 && price < 500000:
+		orderPriceStr = fmt.Sprintf("%d", int(price/100) * 100)
+	case price >= 10000 && price < 100000:
+		orderPriceStr = fmt.Sprintf("%d", int(price/10) * 10)
+	case price >= 1000 && price < 10000:
+		orderPriceStr = fmt.Sprintf("%d", int(price/10) * 10)
+	case price >= 100 && price < 1000:
+		orderPriceStr = fmt.Sprintf("%d", int(price))
+	case price >= 10 && price < 100:
+		orderPriceStr = fmt.Sprintf("%.1f", price)
+	case price < 10:
+		orderPriceStr = fmt.Sprintf("%.2f", price)
+	}
+
+	return
+}

@@ -13,16 +13,6 @@ import (
 var config *model.Config
 var larryRunner *strategy.LarryRunner
 
-var count = 1
-
-type DummyJob struct{}
-
-func (d DummyJob) Run() {
-
-	fmt.Printf("Every %d Seconds\n", count)
-	count++
-}
-
 func main() {
 	fmt.Println("Start RainDrop")
 
@@ -32,20 +22,17 @@ func main() {
 
 	initRaindrop()
 
-	// 1초 단위로 수행
+	// 10초 단위로 수행
 	for {
-		runStrtegy()
-		time.Sleep(5 * time.Second)
+		runStrategy()
+		time.Sleep(10 * time.Second)
 	}
-}
-
-func fmtTest() {
-	fmt.Println(printUtil.PrettyPrint(config))
 }
 
 func initRaindrop() {
 	// 처음 실행시키는 경우,
-	fmt.Println("Init")
+	fmt.Println("Init : Config information")
+	fmt.Println(printUtil.PrettyPrint(config))
 
 	f, err := os.OpenFile("raindrop.log",
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -54,18 +41,16 @@ func initRaindrop() {
 	}
 
 	logger := log.New(f, "RainDrop : ", log.LstdFlags)
-	logger.Println("text to append")
-	logger.Println("more text to append")
-
+	logger.Println("Start raindrop")
 
 	larryRunner = new(strategy.LarryRunner)
 	larryRunner.Init(config, logger)
 }
 
-func runStrtegy() {
-	fmt.Println(time.Now())
-	larryRunner.RunLarryStrategy()
+func runStrategy() {
 
+
+	larryRunner.RunLarryStrategy()
 }
 
 
