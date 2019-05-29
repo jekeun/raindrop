@@ -16,6 +16,7 @@ k는 0.5~1중에서 선택 (일반적으로는 0.5 로 설정)
 
 ### Installation
 
+go install [ubuntu](https://tecadmin.net/install-go-on-ubuntu/) 
 
 ### Getting Started
 

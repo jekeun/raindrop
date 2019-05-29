@@ -58,7 +58,7 @@ func GetBalanceCoinsCanAsk(balances []*types.Balance) (coins []string) {
 
 func AskOrder(client *upbit.Client, coin string, balance string, candle *types.DayCandle) {
 
-		priceStr :=  fmt.Sprintf("%.8f", candle.TradePrice+200)
+		priceStr :=  fmt.Sprintf("%.8f", candle.TradePrice)
 		volumeStr :=  balance
 
 		askOrder := types.OrderInfo{

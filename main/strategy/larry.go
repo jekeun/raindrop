@@ -56,6 +56,13 @@ func (runner *LarryRunner)runLarryAskStrategy() {
 	// 매도 가능 잔고가 있는 경우
 	// askCoins := getCanAskCoins(balances, ordersMap)
 
+	// 이 시간대 매수 오더는 전일 오더이므로 모두 취소시킨다.
+	bidOrders := ordersMap[types.ORDERSIDE_BID]
+	if len(bidOrders) > 0 {
+		runner.cancelAllOrder(bidOrders)
+	}
+
+
 	// 매도 가능 잔고를 구하고, 이중에 Target으로 잡은 코인만 추출한다.
 	askCoins := upbitTool.GetBalanceCoinsCanAsk(balances)
 	targetAskCoins := checkTargetCoins(gConfig, askCoins)
@@ -113,6 +120,14 @@ func (runner *LarryRunner) runLarryBidStrategy() {
 	gLogger.Println("[매수 전략 수행 종료] ")
 }
 
+
+func (runner *LarryRunner) cancelAllOrder(orders []*types.Order) {
+
+	for _, value := range orders {
+		order, _ := runner.client.CancelOrder(value.Uuid)
+		gLogger.Printf("주문 취소 : %s, %s", order.Uuid, order.Side)
+	}
+}
 
 func checkTargetCoins(config *model.Config, coins []string) (targetCoins []string) {
 	targetCoins = make([]string, 0)
@@ -246,7 +261,7 @@ func (runner *LarryRunner) doStrategy(
 			volumeStr := fmt.Sprintf ("%.8f", gConfig.LarryStrategy.OrderAmount/bidValue)
 
 
-			gLogger.Printf("==== 조건 부합 , 매수 주문 Coin : %s , Price : %s, Volume : %s\n", value, priceStr, volumeStr)
+			gLogger.Printf("**** 매수 신호 발생  , 매수 주문 Coin : %s , Price : %s, Volume : %s\n", value, priceStr, volumeStr)
 
 			bidOrder := types.OrderInfo{
 				Identifier: strconv.Itoa(int(util.TimeStamp())),
@@ -262,11 +277,13 @@ func (runner *LarryRunner) doStrategy(
 			if err != nil {
 				gLogger.Println("주문 에러 ")
 			} else {
-				gLogger.Println("매수 성공 ")
-				gLogger.Printf("코인 %s, 주문가격 : %s, 주문수량 :%s", order.Market, order.Price, order.Volume)
+				if len(order.Uuid) > 0 {
+					gLogger.Println("매수 성공 ")
+					gLogger.Printf("코인 %s, 주문가격 : %s, 주문수량 :%s", order.Market, order.Price, order.Volume)
+				}
 			}
 		} else {
-			gLogger.Printf("==== 조건에 부합하지 않음 ====\n")
+			gLogger.Printf("==== 매수 신호 대기 ====\n")
 		}
 
 		gLogger.Printf("\n")
@@ -334,7 +351,7 @@ func (runner *LarryRunner) askOrder(coins []string, balances []*types.Balance, c
 	balanceMap := upbitTool.GetBalanceMap(balances)
 
 	for _, value := range coins {
-		priceStr :=  fmt.Sprintf("%.8f", candleMap[value][0].TradePrice+200)
+		priceStr :=  fmt.Sprintf("%.8f", candleMap[value][0].TradePrice)
 		volumeStr :=  balanceMap[value].Balance
 
 		gLogger.Printf("매도 주문 수행 %s : 가격 , %s , 수량 , %s", value, priceStr, volumeStr)
