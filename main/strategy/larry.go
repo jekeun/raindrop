@@ -63,14 +63,24 @@ func (runner *LarryRunner)runLarryAskStrategy() {
 	}
 
 
-	// 매도 가능 잔고를 구하고, 이중에 Target으로 잡은 코인만 추출한다.
+	// 매도 가능 잔고를 구함 ,
 	askCoins := upbitTool.GetBalanceCoinsCanAsk(balances)
+	if len(askCoins) > 0 {
+		gLogger.Printf("매도 가능 잔고 : %v\n", askCoins)
+	} else {
+		gLogger.Println("매도 가능 잔고 없음")
+	}
+
+	// 이중에 Target으로 잡은 코인만 추출한다.
 	targetAskCoins := checkTargetCoins(gConfig, askCoins)
 
-	gLogger.Println(targetAskCoins)
+	if len(targetAskCoins) <= 0 {
+		gLogger.Println("매도 가능 타겟 잔고 없음")
+	}
 
 	if len(targetAskCoins) > 0 {
 		// Candle 정보 및 현재가 정보를 가져온다.
+		gLogger.Printf("잔고 매도 전략 수행 %v\n", targetAskCoins)
 
 		candleMap := runner.getDayCandlesByCoins(targetAskCoins)
 

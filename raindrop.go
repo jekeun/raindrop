@@ -35,7 +35,7 @@ func initRaindrop() {
 	fmt.Println("Init : Config information")
 	fmt.Println(printUtil.PrettyPrint(config))
 
-	f, err := os.OpenFile("raindrop.log",
+	f, err := os.OpenFile("./log/raindrop.log",
 		os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Println(err)
@@ -43,9 +43,9 @@ func initRaindrop() {
 
 	logger := log.New(f, "RainDrop : ", log.LstdFlags)
 	logger.SetOutput(&lumberjack.Logger{
-		Filename:   "./raindrop.log",
-		MaxSize:    10, // megabytes after which new file is created
-		MaxBackups: 3, // number of backups
+		Filename:   "./log/raindrop.log",
+		MaxSize:    20, // megabytes after which new file is created
+		MaxBackups: 5, // number of backups
 		MaxAge:     31, //days
 	})
 	logger.Println("Start raindrop")
