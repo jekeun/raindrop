@@ -248,52 +248,56 @@ func (runner *LarryRunner) doStrategy(
 		return
 	}
 
-
 	// 잔고에 없는 코인을 기준으로 탐색
 	for _, value := range availableCoins {
-		candleInfo := candleMap[value]
-		rangeValue := candleInfo[1].HighPrice - candleInfo[1].LowPrice
-		kValue := rangeValue * gConfig.LarryStrategy.KValue
-		gLogger.Printf("==== 전략 수행 코인 : %s ====\n", value)
-		gLogger.Printf("전일 고가 : %f, 전일 저가 : %f , Range : %f, Range-K value : %f\n", candleInfo[1].HighPrice, candleInfo[1].LowPrice, rangeValue, kValue)
+		//candleInfo := candleMap[value]
 
-		// 변동성 조건에 해당함.
-		bidValue := candleInfo[0].OpeningPrice + kValue
-
-		gLogger.Printf("당일 시가 %f\n", candleInfo[0].OpeningPrice)
-		gLogger.Printf("매수 조건 가격 %f\n", bidValue)
-		gLogger.Printf("현재 가격 %f\n", candleInfo[0].TradePrice)
-
-		if candleInfo[0].TradePrice >= bidValue {
-			// 매수 주문 실행.
-			// priceStr :=  fmt.Sprintf("%.8f", bidValue)
-			priceStr := upbitTool.GetPriceCanOrder(bidValue)
-			volumeStr := fmt.Sprintf ("%.8f", gConfig.LarryStrategy.OrderAmount/bidValue)
-
-
-			gLogger.Printf("**** 매수 신호 발생  , 매수 주문 Coin : %s , Price : %s, Volume : %s\n", value, priceStr, volumeStr)
-
-			bidOrder := types.OrderInfo{
-				Identifier: strconv.Itoa(int(util.TimeStamp())),
-				Side:       types.ORDERSIDE_BID,
-				Market:     value,
-				Price:      priceStr,
-				Volume:     volumeStr,
-				OrdType:    types.ORDERTYPE_LIMIT}
-
-
-			order, err := runner.client.OrderByInfo(bidOrder)
-
-			if err != nil {
-				gLogger.Println("주문 에러 ")
-			} else {
-				if len(order.Uuid) > 0 {
-					gLogger.Println("매수 성공 ")
-					gLogger.Printf("코인 %s, 주문가격 : %s, 주문수량 :%s", order.Market, order.Price, order.Volume)
-				}
+		if candleInfo, exist := candleMap[value]; exist {
+			if len(candleInfo) < 2 {
+				continue
 			}
-		} else {
-			gLogger.Printf("==== 매수 신호 대기 ====\n")
+			rangeValue := candleInfo[1].HighPrice - candleInfo[1].LowPrice
+			kValue := rangeValue * gConfig.LarryStrategy.KValue
+
+			gLogger.Printf("==== 전략 수행 코인 : %s ====\n", value)
+			gLogger.Printf("전일 고가 : %f, 전일 저가 : %f , Range : %f, Range-K value : %f\n", candleInfo[1].HighPrice, candleInfo[1].LowPrice, rangeValue, kValue)
+
+			// 변동성 조건에 해당함.
+			bidValue := candleInfo[0].OpeningPrice + kValue
+
+			gLogger.Printf("당일 시가 %f\n", candleInfo[0].OpeningPrice)
+			gLogger.Printf("매수 조건 가격 %f\n", bidValue)
+			gLogger.Printf("현재 가격 %f\n", candleInfo[0].TradePrice)
+
+			if candleInfo[0].TradePrice >= bidValue {
+				// 매수 주문 실행.
+				// priceStr :=  fmt.Sprintf("%.8f", bidValue)
+				priceStr := upbitTool.GetPriceCanOrder(bidValue)
+				volumeStr := fmt.Sprintf("%.8f", gConfig.LarryStrategy.OrderAmount/bidValue)
+
+				gLogger.Printf("**** 매수 신호 발생  , 매수 주문 Coin : %s , Price : %s, Volume : %s\n", value, priceStr, volumeStr)
+
+				bidOrder := types.OrderInfo{
+					Identifier: strconv.Itoa(int(util.TimeStamp())),
+					Side:       types.ORDERSIDE_BID,
+					Market:     value,
+					Price:      priceStr,
+					Volume:     volumeStr,
+					OrdType:    types.ORDERTYPE_LIMIT}
+
+				order, err := runner.client.OrderByInfo(bidOrder)
+
+				if err != nil {
+					gLogger.Println("주문 에러 ")
+				} else {
+					if len(order.Uuid) > 0 {
+						gLogger.Println("매수 성공 ")
+						gLogger.Printf("코인 %s, 주문가격 : %s, 주문수량 :%s", order.Market, order.Price, order.Volume)
+					}
+				}
+			} else {
+				gLogger.Printf("==== 매수 신호 대기 ====\n")
+			}
 		}
 
 		gLogger.Printf("\n")
