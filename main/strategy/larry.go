@@ -24,6 +24,8 @@ type LarryRunner struct {
 	client *upbit.Client
 }
 
+const healthCheckCoin = "KRW-ETC"
+
 func (runner *LarryRunner) Init(config *model.Config, logger *log.Logger) {
 	runner.client = upbit.NewClient(config.Account.Accesskey, config.Account.SecretKey)
 	gConfig = config
@@ -35,7 +37,10 @@ func (runner *LarryRunner) RunLarryStrategy() {
 	// 의도적으로 특정 시간대에 매도만 수행하게 한다.
 	now := time.Now().UTC()
 
+
 	balances, ordersMap, _ := runner.getBalanceAndWaitOrders()
+
+	runner.healthCheck(ordersMap)
 
 	candleMap := upbitTool.GetDayCandlesByCoins(runner.client, gConfig.LarryStrategy.Targets, 20)
 
@@ -56,6 +61,51 @@ func (runner *LarryRunner) RunLarryStrategy() {
 		runner.runLarryAskStrategy(balances, ordersMap, candleMap)
 	} else {
 		runner.runLarryBidStrategy(balances, ordersMap, candleMap, kMap, malScoreMap)
+	}
+}
+
+/*
+ * 실제 주문으로 HealthCheck
+ * 안전하게 ETC 100원으로 주문
+ */
+func (runner *LarryRunner) healthCheck(ordersMap map[string][]*types.Order) {
+
+	var etcOrder *types.Order = nil
+
+	bidOrders := ordersMap[types.ORDERSIDE_BID]
+
+	for _, order := range bidOrders {
+		if order.Market == healthCheckCoin {
+			etcOrder = order
+			break
+		}
+	}
+
+	//매수 주문이 있다면 취소
+	if etcOrder != nil {
+		runner.client.CancelOrder(etcOrder.Uuid)
+	} else {
+		// 매수
+		bidOrder := types.OrderInfo{
+			Identifier: strconv.Itoa(int(upbitUtil.TimeStamp())),
+			Side:       types.ORDERSIDE_BID,
+			Market:     healthCheckCoin,
+			Price:      "100",
+			Volume:     "100",
+			OrdType:    types.ORDERTYPE_LIMIT}
+
+		order, err := runner.client.OrderByInfo(bidOrder)
+
+		if err != nil {
+			gLogger.Println("주문 에러 ")
+		} else {
+			if len(order.Uuid) > 0 {
+				gLogger.Println("헬스체크 매수 성공 ")
+			}
+		}
+
+
+
 	}
 }
 
@@ -367,7 +417,7 @@ func (runner *LarryRunner) doStrategy(
 		return
 	}
 
-	if len(balances) - 1 > gConfig.LarryStrategy.MaxCoin {
+	if len(balances) - 1 >= gConfig.LarryStrategy.MaxCoin {
 		gLogger.Printf("기존 보유 코인이 설정값 초과 : 보유코인 %d, 설정값 %d\n",
 			len(balances) - 1, gConfig.LarryStrategy.MaxCoin)
 		return
