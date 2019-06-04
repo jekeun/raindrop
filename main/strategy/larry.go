@@ -3,16 +3,19 @@ package strategy
 import (
 	"fmt"
 	"github.com/jekeun/upbit-go"
+	upbitTool "github.com/jekeun/upbit-go/tool"
 	"github.com/jekeun/upbit-go/types"
-	"github.com/jekeun/upbit-go/util"
+	upbitUtil "github.com/jekeun/upbit-go/util"
 	"log"
+	"math"
 	"raindrop/main/model"
-	upbitTool "raindrop/main/upbit"
-	coinUtil "raindrop/main/utils/coin"
 	"strconv"
-	"strings"
 	"time"
 )
+
+/*
+ * Larry Williams 변동선 전략 수행
+ */
 
 var gLogger *log.Logger
 var gConfig *model.Config
@@ -21,8 +24,6 @@ type LarryRunner struct {
 	client *upbit.Client
 }
 
-const ASK_PERIOD_MINUTE = 10		// 10 minute
-
 func (runner *LarryRunner) Init(config *model.Config, logger *log.Logger) {
 	runner.client = upbit.NewClient(config.Account.Accesskey, config.Account.SecretKey)
 	gConfig = config
@@ -30,22 +31,40 @@ func (runner *LarryRunner) Init(config *model.Config, logger *log.Logger) {
 }
 
 func (runner *LarryRunner) RunLarryStrategy() {
-	// Time 체크 : 주어진 시간대 + 10분 이내에 매도 주문을 완성시킨다.
+	// Time 체크 : 주어진 시간대 + N분(config) 이내에 매도 주문을 완성시킨다.
+	// 의도적으로 특정 시간대에 매도만 수행하게 한다.
 	now := time.Now().UTC()
 
+	balances, ordersMap, _ := runner.getBalanceAndWaitOrders()
+
+	candleMap := upbitTool.GetDayCandlesByCoins(runner.client, gConfig.LarryStrategy.Targets, 20)
+
+	// 스탑로스 or 익절 체크
+	// runner.processProfit(gConfig.LarryStrategy.StopLoss, balances, ordersMap, candleMap)
+
+	kMap := getKNoiseValueByDay(candleMap)
+	malMap := getMovingAverageLineByDay(candleMap)
+	malScoreMap := getMalScore(malMap, candleMap)
+
+	//fmt.Println(kMap)
+	//fmt.Println(malMap)
+	//fmt.Println(malScoreMap)
+
+	// 주어진 시각, 최대 5분간 잔고 매도만 수행한다.
 	if now.Hour() == gConfig.LarryStrategy.StartTime &&
-		now.Minute() < ASK_PERIOD_MINUTE {
-		runner.runLarryAskStrategy()
+		now.Minute() <= gConfig.LarryStrategy.AskPeriodMinute {
+		runner.runLarryAskStrategy(balances, ordersMap, candleMap)
 	} else {
-		runner.runLarryBidStrategy()
+		runner.runLarryBidStrategy(balances, ordersMap, candleMap, kMap, malScoreMap)
 	}
 }
 
 // 매도 전략
-func (runner *LarryRunner)runLarryAskStrategy() {
+func (runner *LarryRunner)runLarryAskStrategy(balances []*types.Balance,
+	ordersMap map[string][]*types.Order,
+	candleMap map[string][]*types.DayCandle) {
 
 	gLogger.Println("[매도 전략 수행중]")
-	balances, ordersMap, _ := runner.getBalanceAndWaitOrders()
 
 	logBalance(balances)
 	logWaitOrders(ordersMap[types.ORDERSIDE_ASK])
@@ -62,16 +81,16 @@ func (runner *LarryRunner)runLarryAskStrategy() {
 		runner.cancelAllOrder(bidOrders)
 	}
 
-
 	// 매도 가능 잔고를 구함 ,
 	askCoins := upbitTool.GetBalanceCoinsCanAsk(balances)
+
 	if len(askCoins) > 0 {
 		gLogger.Printf("매도 가능 잔고 : %v\n", askCoins)
 	} else {
 		gLogger.Println("매도 가능 잔고 없음")
 	}
 
-	// 이중에 Target으로 잡은 코인만 추출한다.
+	// 매도가능 잔고에서  Target으로 잡은 코인만 추출한다.
 	targetAskCoins := checkTargetCoins(gConfig, askCoins)
 
 	if len(targetAskCoins) <= 0 {
@@ -82,7 +101,7 @@ func (runner *LarryRunner)runLarryAskStrategy() {
 		// Candle 정보 및 현재가 정보를 가져온다.
 		gLogger.Printf("잔고 매도 전략 수행 %v\n", targetAskCoins)
 
-		candleMap := runner.getDayCandlesByCoins(targetAskCoins)
+		// candleMap := runner.getDayCandlesByCoins(targetAskCoins)
 
 		runner.askOrder(targetAskCoins, balances, candleMap)
 
@@ -93,7 +112,7 @@ func (runner *LarryRunner)runLarryAskStrategy() {
 
 		gLogger.Println("미체결 오더 확인 ")
 		if len(waitTargetCoins) > 0 {
-			candleMap := runner.getDayCandlesByCoins(waitTargetCoins)
+			// candleMap := runner.getDayCandlesByCoins(waitTargetCoins)
 
 			runner.forceAskOrder(gConfig, ordersMap[types.ORDERSIDE_ASK], waitTargetCoins, candleMap)
 		}
@@ -107,25 +126,25 @@ func (runner *LarryRunner)runLarryAskStrategy() {
 }
 
 // 매수 전략
-func (runner *LarryRunner) runLarryBidStrategy() {
+func (runner *LarryRunner) runLarryBidStrategy(balances []*types.Balance,
+	ordersMap map[string][]*types.Order,
+	candleMap map[string][]*types.DayCandle,
+	kMap map[string]float64,
+	malScoreMap  map[string]float64) {
 
 	gLogger.Println()
 	gLogger.Println("[매수 전략 수행중]")
-	balances, ordersMap, _ := runner.getBalanceAndWaitOrders()
 
 	logBalance(balances)
 	logWaitOrders(ordersMap[types.ORDERSIDE_BID])
 
 	// 잔고에 없고 WaitingOrder가 없는 코인으로 탐색 대상을 잡는다.
-	availableCoins := getCheckCoins(gConfig, balances, ordersMap)
+	availableCoins := getAvailableCoins(gConfig, balances, ordersMap)
 
 	// targetBidCoins := checkTargetCoins(config, availableCoins)
 
-	// Candle 정보 및 현재가 정보를 가져온다.
-	candleMap := runner.getDayCandlesByCoins(availableCoins)
-
 	// 전략 수행
-	runner.doStrategy(balances, availableCoins, candleMap, ordersMap)
+	runner.doStrategy(balances, availableCoins, candleMap, ordersMap, kMap, malScoreMap)
 
 	gLogger.Println("[매수 전략 수행 종료] ")
 }
@@ -154,6 +173,97 @@ func checkTargetCoins(config *model.Config, coins []string) (targetCoins []strin
 	return
 }
 
+/*
+ * 각 코인별 이동평균선 리스트를 가져온다.
+ * 3일 평균 이평선 ~ 18일 평균 이평선까지
+ */
+func getMovingAverageLineByDay(candleMap map[string][]*types.DayCandle) (
+	malMap map[string][]float64) {
+
+	malMap = make(map[string][]float64)
+
+	sum := 0.0
+
+	for key, value := range candleMap {
+		sum = 0.0
+		malSlice := make([]float64, 0, 0)
+		if len(value) > 0 {
+			for index, candle := range value {
+				sum += candle.TradePrice
+				if index >=  2 {	// 3일봉부터
+					malSlice = append(malSlice, sum/(float64(index+1)))
+				}
+			}
+
+			malMap[key] = malSlice
+		}
+
+	}
+
+	//fmt.Println(malMap)
+	return
+}
+
+
+func getMalScore(malMap map[string][]float64,
+	candleMap map[string][]*types.DayCandle) (
+	scoreMap map[string]float64) {
+
+	if len(malMap) <= 0 {
+		return
+	}
+
+	scoreMap = make(map[string]float64)
+
+	var currentPrice float64
+	var score float64
+	for key, value := range malMap {
+		if candles, exist := candleMap[key]; exist {
+			if len(candles) > 0 {
+				currentPrice = candles[0].TradePrice
+				score = 0.0
+				totalCount := len(value)
+				for _, malValue := range value {
+					if currentPrice > malValue {
+						score += 1.0/float64(totalCount)
+					}
+				}
+
+				score = math.Round(score*100)/100
+				scoreMap[key] = score
+			}
+		}
+	}
+
+	return
+}
+/*
+ * K Value 계산
+ * 노이즈 비율 = 1-abs(시가-종가)/(고가-저가)
+ * k = 최근 20일간의 노이즈 비율의 평균 값
+ */
+func getKNoiseValueByDay(candleMap map[string][]*types.DayCandle) (
+	kMap map[string]float64) {
+
+	kMap = make(map[string]float64)
+	var kValue float64
+	var kSum float64
+	for key, value := range candleMap {
+		kValue = 0.0
+		kSum = 0.0
+		if len(value) > 0 {
+			for _, candle := range value {
+				candleKValue := 1 - math.Abs((candle.OpeningPrice - candle.TradePrice)/(candle.HighPrice-candle.LowPrice))
+				kSum += candleKValue
+			}
+			kValue = kSum/float64(len(value))
+
+			kMap[key] = kValue
+		}
+	}
+	return
+}
+
 
 /*
  * 매도 가능한 코인을 얻어온다.
@@ -167,7 +277,7 @@ func getCanAskCoins(balances []*types.Balance, ordersMap map[string][]*types.Ord
 		if value.Currency == "KRW" {
 			continue
 		}
-		currency := coinUtil.GetMarketFromCurrency(value.Currency, "KRW")
+		currency := upbitUtil.GetMarketFromCurrency(value.Currency, "KRW")
 
 		askOrders := ordersMap[types.ORDERSIDE_ASK]
 
@@ -187,7 +297,13 @@ func getCanAskCoins(balances []*types.Balance, ordersMap map[string][]*types.Ord
 }
 
 
-func (runner *LarryRunner) getBalanceAndWaitOrders()(balances []*types.Balance, ordersMap map[string][]*types.Order, err error ) {
+/*
+ * 밸런스와 미체결오더를 같이 가져온다.
+ */
+func (runner *LarryRunner) getBalanceAndWaitOrders()(
+	balances []*types.Balance,
+	ordersMap map[string][]*types.Order,
+	err error ) {
 	// check balance
 	balances, err = runner.client.Accounts()
 
@@ -205,6 +321,7 @@ func (runner *LarryRunner) getBalanceAndWaitOrders()(balances []*types.Balance, 
 
 	return
 }
+
 /*
  * 주문 가능 원화 잔고를 가져온다.
  */
@@ -226,12 +343,19 @@ func getAvailableKrwBalance(balances []*types.Balance) (krwBalance float64) {
 
 /*
  * 전략 실행
+ * param
+ * balances : 잔고 목록
+ * availableCoins : 매매 가능 코인
+ * 일봉 캔들 목록
+ *
  */
 func (runner *LarryRunner) doStrategy(
 	balances []*types.Balance,
 	availableCoins []string,
 	candleMap map[string][]*types.DayCandle,
-	orderMap map[string][]*types.Order) (err error) {
+	orderMap map[string][]*types.Order,
+	kMap map[string]float64,
+	malScoreMap map[string]float64) (err error) {
 
 	// 주문 가능 잔고 체크
 	availableKrwBalance := getAvailableKrwBalance(balances)
@@ -244,28 +368,39 @@ func (runner *LarryRunner) doStrategy(
 	}
 
 	if len(balances) - 1 > gConfig.LarryStrategy.MaxCoin {
-		gLogger.Printf("기존 보유 코인이 설정값 초과 : 보유코인 %d, 설정값 %d\n", len(balances) - 1, gConfig.LarryStrategy.MaxCoin)
+		gLogger.Printf("기존 보유 코인이 설정값 초과 : 보유코인 %d, 설정값 %d\n",
+			len(balances) - 1, gConfig.LarryStrategy.MaxCoin)
 		return
 	}
 
 	// 잔고에 없는 코인을 기준으로 탐색
-	for _, value := range availableCoins {
+	for _, coinName := range availableCoins {
 		//candleInfo := candleMap[value]
 
-		if candleInfo, exist := candleMap[value]; exist {
-			if len(candleInfo) < 2 {
+		if candleInfo, exist := candleMap[coinName]; exist {
+			if len(candleInfo) < 2 {	// 최소한 봉이 2개 이상 있어야 판단 가능.
 				continue
 			}
-			rangeValue := candleInfo[1].HighPrice - candleInfo[1].LowPrice
-			kValue := rangeValue * gConfig.LarryStrategy.KValue
 
-			gLogger.Printf("==== 전략 수행 코인 : %s ====\n", value)
-			gLogger.Printf("전일 고가 : %f, 전일 저가 : %f , Range : %f, Range-K value : %f\n", candleInfo[1].HighPrice, candleInfo[1].LowPrice, rangeValue, kValue)
+			// 고가 - 저가 = 범위값
+			rangeValue := candleInfo[1].HighPrice - candleInfo[1].LowPrice
+			kValue := gConfig.LarryStrategy.KValue
+
+			if coinKValue, valueExist := kMap[coinName]; valueExist {
+				kValue = coinKValue
+			}
+
+			kAppliedValue := rangeValue * kValue
+
+			gLogger.Printf("==== 전략 수행 코인 : %s ====\n", coinName)
+			gLogger.Printf("전일 고가 : %f, 전일 저가 : %f , Range : %f, Range-K value : %f\n",
+				candleInfo[1].HighPrice, candleInfo[1].LowPrice, rangeValue, kValue)
 
 			// 변동성 조건에 해당함.
-			bidValue := candleInfo[0].OpeningPrice + kValue
+			bidValue := candleInfo[0].OpeningPrice + kAppliedValue
 
 			gLogger.Printf("당일 시가 %f\n", candleInfo[0].OpeningPrice)
+			gLogger.Printf("이동편균 Score %f, 변동성 적용 가격 %f\n", malScoreMap[coinName], kAppliedValue)
 			gLogger.Printf("매수 조건 가격 %f\n", bidValue)
 			gLogger.Printf("현재 가격 %f\n", candleInfo[0].TradePrice)
 
@@ -273,14 +408,26 @@ func (runner *LarryRunner) doStrategy(
 				// 매수 주문 실행.
 				// priceStr :=  fmt.Sprintf("%.8f", bidValue)
 				priceStr := upbitTool.GetPriceCanOrder(bidValue)
-				volumeStr := fmt.Sprintf("%.8f", gConfig.LarryStrategy.OrderAmount/bidValue)
 
-				gLogger.Printf("**** 매수 신호 발생  , 매수 주문 Coin : %s , Price : %s, Volume : %s\n", value, priceStr, volumeStr)
+				orderAmount := getOrderAmount(gConfig.LarryStrategy.OrderAmount, malScoreMap, coinName)
+				// orderAmount := gConfig.LarryStrategy.OrderAmount * malScoreMap[coinName]
+				// volumeStr := fmt.Sprintf("%.8f", gConfig.LarryStrategy.OrderAmount/bidValue)
+
+				if orderAmount <= 0 {
+					gLogger.Printf("**** 매수 신호 발생  , 매수 주문 Coin : %s , Price : %s, Volume : 0.0\n",
+						coinName, priceStr)
+					continue
+				}
+
+				volumeStr := fmt.Sprintf("%.8f", orderAmount/bidValue)
+
+				gLogger.Printf("**** 매수 신호 발생  , 매수 주문 Coin : %s , Price : %s, Volume : %s\n",
+					coinName, priceStr, volumeStr)
 
 				bidOrder := types.OrderInfo{
-					Identifier: strconv.Itoa(int(util.TimeStamp())),
+					Identifier: strconv.Itoa(int(upbitUtil.TimeStamp())),
 					Side:       types.ORDERSIDE_BID,
-					Market:     value,
+					Market:     coinName,
 					Price:      priceStr,
 					Volume:     volumeStr,
 					OrdType:    types.ORDERTYPE_LIMIT}
@@ -306,44 +453,22 @@ func (runner *LarryRunner) doStrategy(
 	return
 }
 
-/*
- * desCoins 리스트에 coin이 있는지 체크
- */
-func isExist(coin string, desCoins []string) (bExist bool) {
-	bExist = false
+func getOrderAmount(defaultAmount float64, malScoreMap map[string]float64, coinName string) (orderAmount float64){
 
-	for _, value := range desCoins {
-		if strings.EqualFold(coin, value) {
-			bExist = true
-			return
-		}
+	orderAmount = 0.0
+	if malScore, exist := malScoreMap[coinName]; exist {
+		orderAmount = defaultAmount * malScore
 	}
 
 	return
 }
-
 /*
- * order 목록에 coin 주문이 있는지 확인
- */
-func existOrder(coin string, orderMap map[string][]*types.Order, orderSide string) (bExist bool) {
-	bExist = false
-
-	bidOrders := orderMap[orderSide]
-
-	for _, value := range bidOrders {
-		if strings.EqualFold(value.Market, coin) {
-			bExist = true
-			return
-		}
-	}
-
-	return
-}
-
-/*
+ * 전략 수행에 적용할 코인 목록 가져오기
  * 이미 잔고에 없고, 미체결 주문이 들어가지 않은 코인을 가져온다.
  */
-func getCheckCoins(config *model.Config, balances []*types.Balance, orderMap map[string][]*types.Order) (checkCoins []string ) {
+func getAvailableCoins(config *model.Config,
+	balances []*types.Balance,
+	orderMap map[string][]*types.Order) (checkCoins []string ) {
 
 	balanceMap := upbitTool.GetBalanceMap(balances)
 	checkCoins = make([]string, 0)
@@ -352,7 +477,7 @@ func getCheckCoins(config *model.Config, balances []*types.Balance, orderMap map
 		coin := config.LarryStrategy.Targets[i]
 
 		if _, exist := balanceMap[coin]; !exist {
-			if !existOrder(coin, orderMap, types.ORDERSIDE_BID) {
+			if _, exist := upbitTool.ExistOrder(coin, orderMap, types.ORDERSIDE_BID); !exist {
 				checkCoins = append(checkCoins, coin)
 			}
 		}
@@ -371,7 +496,7 @@ func (runner *LarryRunner) askOrder(coins []string, balances []*types.Balance, c
 		gLogger.Printf("매도 주문 수행 %s : 가격 , %s , 수량 , %s", value, priceStr, volumeStr)
 
 		askOrder := types.OrderInfo{
-			Identifier: strconv.Itoa(int(util.TimeStamp())),
+			Identifier: strconv.Itoa(int(upbitUtil.TimeStamp())),
 			Side:       types.ORDERSIDE_ASK,
 			Market:     value,
 			Price:      priceStr,
@@ -398,7 +523,7 @@ func (runner *LarryRunner) forceAskOrder(config *model.Config, orders[]*types.Or
 	gLogger.Println("강제 매도 수행")
 	for _, value := range orders {
 
-		if isExist(value.Market, targetCoins) {
+		if upbitTool.IsExist(value.Market, targetCoins) {
 			orderTime, _ := time.Parse(time.RFC3339, value.CreatedAt)
 
 			now := time.Now()
@@ -418,29 +543,17 @@ func (runner *LarryRunner) forceAskOrder(config *model.Config, orders[]*types.Or
 
 					gLogger.Println("매도 주문 실행 ")
 					gLogger.Printf("코인 : %s, 주문수량 : %s, 주문가격 : %f\n", value.Market, value.Volume, candleMap[value.Market][0].TradePrice)
-					upbitTool.AskOrder(runner.client, value.Market, value.Volume, candleMap[value.Market][0])
+					upbitTool.AskOrder(runner.client, value.Market, value.Volume, candleMap[value.Market][0],  types.ORDERTYPE_LIMIT)
 				}
 			}
 		}
 	}
 }
 
-func (runner *LarryRunner) getDayCandlesByCoins(coins []string) (candleMap map[string][]*types.DayCandle) {
-	candleMap = make(map[string][]*types.DayCandle)
-	for _, coin := range coins {
-		candles, err := runner.client.DayCandles(coin, map[string]string{
-			"count": "5",
-		})
-		if err != nil {
-			log.Println(err)
-			continue
-		}
 
-		candleMap[coin] = candles
-	}
 
-	return
-}
+
+
 
 /*
  * 밸런스 로깅
@@ -466,6 +579,40 @@ func logWaitOrders(orders []*types.Order) {
 	}
 }
 
+/*
+ * StopLoss or ProfitLoss 프로세스 실행
+ */
+
+func (runner *LarryRunner) processProfit(stopLossRate float64, balances []*types.Balance, ordersMap map[string][]*types.Order, candleMap map[string][]*types.DayCandle) {
+	if len(balances) <= 0 {
+		return
+	}
+
+	for _, balance := range balances {
+		if balance.Currency == "KRW" {
+			continue
+		}
+
+		coinStr := upbitUtil.GetMarketFromCurrency(balance.Currency, "KRW")
+
+		currentPrice := upbitTool.GetCurrentPriceFromDayCandle(candleMap[coinStr])
+
+		profitRate := upbitTool.GetProfitRate(balance, currentPrice)
+
+		//profitRate = -10
+
+		if stopLossRate > profitRate {
+			if order, exist := upbitTool.ExistOrder(coinStr, ordersMap, types.ORDERSIDE_ASK); exist {
+				runner.client.CancelOrder(order.Uuid)
+			}
+
+			// Ask Order
+			upbitTool.AskMarketOrder(runner.client, coinStr, balance.Balance)
+
+
+		}
+	}
+}
 
 //func getDayCandles(config *model.Config) (candleMap map[string][]*types.DayCandle) {
 //
