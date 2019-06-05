@@ -6,13 +6,13 @@ import (
 	"log"
 	"os"
 	"raindrop/main/model"
-	"raindrop/main/strategy"
+	"raindrop/main/strategy/lw_basic"
 	printUtil "raindrop/main/utils/print"
 	"time"
 )
 
 var config *model.Config
-var larryRunner *strategy.LarryRunner
+var lwBasicRunner *lw_basic.LarryRunner
 
 func main() {
 	fmt.Println("Start RainDrop")
@@ -50,14 +50,12 @@ func initRaindrop() {
 	})
 	logger.Println("Start raindrop")
 
-	larryRunner = new(strategy.LarryRunner)
-	larryRunner.Init(config, logger)
+	lwBasicRunner = new(lw_basic.LarryRunner)
+	lwBasicRunner.Init(config, logger)
 }
 
 func runStrategy() {
-
-
-	larryRunner.RunLarryStrategy()
+	lwBasicRunner.RunLWBasicStrategy()
 }
 
 
