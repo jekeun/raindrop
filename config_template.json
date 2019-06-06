@@ -5,23 +5,46 @@
   },
 
   "larry_strategy" : {
+    "enable" : 1,
     "k_value" : 0.5,
-    "period" : 24,
-    "start_time" : 9,
-    "stop_loss" : 5,
-    "max_profit" : 100,
+    "period" : 6,
+    "start_time" : 0,
+    "stop_loss" : -4.0,
+    "max_profit" : 6,
     "min_variability" : 1,
-    "order_amount" : 100000,
+    "order_amount" : 200000,
     "max_coin" : 5,
+    "ask_period_minute" : 5,
     "ask_order_gap" : 60,
+    "money_plan" : 2.0,
     "targets" : [
       "KRW-BTC",
       "KRW-BCH",
       "KRW-XRP",
       "KRW-ETH",
       "KRW-EOS",
-      "KRW-ATOM",
-      "KRW-BAT",
+      "KRW-BSV",
+      "KRW-TRX",
+      "KRW-BTT",
+      "KRW-CRE"
+    ]
+  },
+  "day_gold_strategy" : {
+    "enable" : 1,
+    "period" : 15,
+    "stop_loss" : 2,
+    "max_profit" : 3,
+    "order_amount" : 100000,
+    "max_coin" : 5,
+    "ask_order_gap" : 20,
+    "targets" : [
+      "KRW-BTC",
+      "KRW-BCH",
+      "KRW-XRP",
+      "KRW-ETH",
+      "KRW-EOS",
+      "KRW-BSV",
+      "KRW-TRX",
       "KRW-BTT"
     ]
   }

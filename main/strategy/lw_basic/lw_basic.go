@@ -489,7 +489,10 @@ func (runner *LarryRunner) doStrategy(
 				// priceStr :=  fmt.Sprintf("%.8f", bidValue)
 				priceStr := upbitTool.GetPriceCanOrder(bidValue)
 
-				orderAmount := getOrderAmount(gConfig.LarryStrategy.OrderAmount, malScoreMap, coinName)
+				orderAmount := getOrderAmount(gConfig.LarryStrategy.OrderAmount,
+					gConfig.LarryStrategy.MoneyPlan,
+					candleInfo,
+					malScoreMap, coinName)
 				// orderAmount := gConfig.LarryStrategy.OrderAmount * malScoreMap[coinName]
 				// volumeStr := fmt.Sprintf("%.8f", gConfig.LarryStrategy.OrderAmount/bidValue)
 
@@ -504,24 +507,24 @@ func (runner *LarryRunner) doStrategy(
 				gLogger.Printf("**** 매수 신호 발생  , 매수 주문 Coin : %s , Price : %s, Volume : %s\n",
 					coinName, priceStr, volumeStr)
 
-				bidOrder := types.OrderInfo{
-					Identifier: strconv.Itoa(int(upbitUtil.TimeStamp())),
-					Side:       types.ORDERSIDE_BID,
-					Market:     coinName,
-					Price:      priceStr,
-					Volume:     volumeStr,
-					OrdType:    types.ORDERTYPE_LIMIT}
+				//bidOrder := types.OrderInfo{
+				//	Identifier: strconv.Itoa(int(upbitUtil.TimeStamp())),
+				//	Side:       types.ORDERSIDE_BID,
+				//	Market:     coinName,
+				//	Price:      priceStr,
+				//	Volume:     volumeStr,
+				//	OrdType:    types.ORDERTYPE_LIMIT}
 
-				order, err := runner.client.OrderByInfo(bidOrder)
-
-				if err != nil {
-					gLogger.Println("주문 에러 ")
-				} else {
-					if len(order.Uuid) > 0 {
-						gLogger.Println("매수 성공 ")
-						gLogger.Printf("코인 %s, 주문가격 : %s, 주문수량 :%s", order.Market, order.Price, order.Volume)
-					}
-				}
+				//order, err := runner.client.OrderByInfo(bidOrder)
+				//
+				//if err != nil {
+				//	gLogger.Println("주문 에러 ")
+				//} else {
+				//	if len(order.Uuid) > 0 {
+				//		gLogger.Println("매수 성공 ")
+				//		gLogger.Printf("코인 %s, 주문가격 : %s, 주문수량 :%s", order.Market, order.Price, order.Volume)
+				//	}
+				//}
 			} else {
 				gLogger.Printf("==== 매수 신호 대기 ====\n")
 			}
@@ -533,11 +536,39 @@ func (runner *LarryRunner) doStrategy(
 	return
 }
 
-func getOrderAmount(defaultAmount float64, malScoreMap map[string]float64, coinName string) (orderAmount float64){
+func getOrderAmount(defaultAmount float64,
+	moneyPlan float64,
+	candles []*types.DayCandle,
+	malScoreMap map[string]float64,
+	coinName string) (orderAmount float64){
+
+	const MAX_INDEX = 5
 
 	orderAmount = 0.0
 	if malScore, exist := malScoreMap[coinName]; exist {
-		orderAmount = defaultAmount * malScore
+
+		// 5일간 평균 변동성 구하기
+		avrVarSum := 0.0
+		currentPrice := candles[0].TradePrice
+		for index := range candles {
+			if index == MAX_INDEX {
+				break
+			}
+
+			curVar := (candles[index+1].HighPrice - candles[index+1].LowPrice)/currentPrice
+			avrVarSum += curVar
+		}
+
+		// prevVar := (candles[1].HighPrice - candles[1].LowPrice)/candles[0].TradePrice
+		avrVar := float64( avrVarSum / 5)
+
+		moneyPlanRate := (moneyPlan/100)/avrVar
+
+		orderAmount = defaultAmount * malScore * moneyPlanRate
+
+		if orderAmount > defaultAmount {
+			orderAmount = defaultAmount
+		}
 	}
 
 	return

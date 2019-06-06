@@ -23,6 +23,7 @@ type Config struct {
 		MaxCoin int `json:"max_coin"`
 		AskPeriodMinute int `json:"ask_period_minute"`
 		AskOrderGap int `json:"ask_order_gap"`
+		MoneyPlan float64 `json:"money_plan"`
 		Targets []string `json:"targets"`
 	} `json:"larry_strategy"`
 	DayGoldStrategy struct {
