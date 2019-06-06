@@ -566,6 +566,12 @@ func getOrderAmount(defaultAmount float64,
 
 		orderAmount = defaultAmount * malScore * moneyPlanRate
 
+		gLogger.Printf("평균 변동성 : %.2f, 자금관리 비율 : %.2f, 이평스코어 : %.2f, 목표금액 : %f\n",
+			avrVar,
+			moneyPlanRate,
+			malScore,
+			orderAmount)
+		
 		if orderAmount > defaultAmount {
 			orderAmount = defaultAmount
 		}
