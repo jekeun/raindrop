@@ -507,24 +507,24 @@ func (runner *LarryRunner) doStrategy(
 				gLogger.Printf("**** 매수 신호 발생  , 매수 주문 Coin : %s , Price : %s, Volume : %s\n",
 					coinName, priceStr, volumeStr)
 
-				//bidOrder := types.OrderInfo{
-				//	Identifier: strconv.Itoa(int(upbitUtil.TimeStamp())),
-				//	Side:       types.ORDERSIDE_BID,
-				//	Market:     coinName,
-				//	Price:      priceStr,
-				//	Volume:     volumeStr,
-				//	OrdType:    types.ORDERTYPE_LIMIT}
+				bidOrder := types.OrderInfo{
+					Identifier: strconv.Itoa(int(upbitUtil.TimeStamp())),
+					Side:       types.ORDERSIDE_BID,
+					Market:     coinName,
+					Price:      priceStr,
+					Volume:     volumeStr,
+					OrdType:    types.ORDERTYPE_LIMIT}
 
-				//order, err := runner.client.OrderByInfo(bidOrder)
-				//
-				//if err != nil {
-				//	gLogger.Println("주문 에러 ")
-				//} else {
-				//	if len(order.Uuid) > 0 {
-				//		gLogger.Println("매수 성공 ")
-				//		gLogger.Printf("코인 %s, 주문가격 : %s, 주문수량 :%s", order.Market, order.Price, order.Volume)
-				//	}
-				//}
+				order, err := runner.client.OrderByInfo(bidOrder)
+
+				if err != nil {
+					gLogger.Println("주문 에러 ")
+				} else {
+					if len(order.Uuid) > 0 {
+						gLogger.Println("매수 성공 ")
+						gLogger.Printf("코인 %s, 주문가격 : %s, 주문수량 :%s", order.Market, order.Price, order.Volume)
+					}
+				}
 			} else {
 				gLogger.Printf("==== 매수 신호 대기 ====\n")
 			}
