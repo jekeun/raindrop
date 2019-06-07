@@ -20,6 +20,7 @@ type Config struct {
 		MaxProfit float64 	`json:"max_profit"`
 		MinVariability int `json:"min_variability"`
 		OrderAmount float64 `json:"order_amount"`
+		MinOrderAmountRate float64 `json:"min_order_amount_rate"`
 		MaxCoin int `json:"max_coin"`
 		AskPeriodMinute int `json:"ask_period_minute"`
 		AskOrderGap int `json:"ask_order_gap"`

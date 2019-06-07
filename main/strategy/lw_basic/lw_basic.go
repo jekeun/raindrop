@@ -493,6 +493,7 @@ func (runner *LarryRunner) doStrategy(
 
 			// 자금관리 비율 계산을 위해 값을 구한다.
 			orderAmount, _ := getOrderAmount(gConfig.LarryStrategy.OrderAmount,
+				gConfig.LarryStrategy.MinOrderAmountRate,
 				gConfig.LarryStrategy.MoneyPlan,
 				candleInfo,
 				malScoreMap, coinName)
@@ -549,7 +550,8 @@ func (runner *LarryRunner) doStrategy(
 	return
 }
 
-func getOrderAmount(defaultAmount float64,
+func getOrderAmount(maxOrderAmount float64,
+	minOrderAmountRate float64,
 	moneyPlan float64,
 	candles []*types.DayCandle,
 	malScoreMap map[string]float64,
@@ -557,10 +559,12 @@ func getOrderAmount(defaultAmount float64,
 	orderAmount float64,
 	moneyPlanRate float64) {
 
-	const MAX_INDEX = 5
+	const MAX_INDEX = 3
 
 	orderAmount = 0.0
 	moneyPlanRate = 0.0
+
+	minOrderAmount := maxOrderAmount * (minOrderAmountRate/100.0)
 
 	if malScore, exist := malScoreMap[coinName]; exist {
 
@@ -577,19 +581,23 @@ func getOrderAmount(defaultAmount float64,
 		}
 
 		// prevVar := (candles[1].HighPrice - candles[1].LowPrice)/candles[0].TradePrice
-		avrVar := float64( avrVarSum / 5)
+		avrVar := float64( avrVarSum / MAX_INDEX)
 
 		moneyPlanRate = (moneyPlan/100)/avrVar
 
-		orderAmount = defaultAmount * malScore * moneyPlanRate
+		orderAmount = maxOrderAmount * malScore * moneyPlanRate
 
 		gLogger.Printf("평균 변동성 : %.2f, 자금관리 비율 : %.2f, 이평스코어 : %.2f\n",
 			avrVar,
 			moneyPlanRate,
 			malScore)
 
-		if orderAmount > defaultAmount {
-			orderAmount = defaultAmount
+		if orderAmount > maxOrderAmount {
+			orderAmount = maxOrderAmount
+		}
+
+		if orderAmount < minOrderAmount {
+			orderAmount = minOrderAmount
 		}
 	}
 
