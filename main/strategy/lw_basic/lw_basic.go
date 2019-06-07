@@ -54,6 +54,12 @@ func (runner *LarryRunner) RunLWBasicStrategy() {
 		return
 	}
 
+	//orderAmount := getOrderAmount(gConfig.LarryStrategy.OrderAmount,
+	//	gConfig.LarryStrategy.MoneyPlan,
+	//	candleMap["KRW-XRP"],
+	//	map[string]float64{"KRW-XRP":0.6}, "KRW-XRP")
+
+	//fmt.Println(orderAmount)
 	// 스탑로스 or 익절 체크
 	// 기본 로직은 StopLoss 및 StopProfit 을 적용하지 않는다.
 	// runner.processStop(gConfig.LarryStrategy.StopLoss, balances, ordersMap, candleMap)
@@ -484,15 +490,22 @@ func (runner *LarryRunner) doStrategy(
 			gLogger.Printf("매수 조건 가격 %f\n", bidValue)
 			gLogger.Printf("현재 가격 %f\n", candleInfo[0].TradePrice)
 
+
+			// 자금관리 비율 계산을 위해 값을 구한다.
+			orderAmount, _ := getOrderAmount(gConfig.LarryStrategy.OrderAmount,
+				gConfig.LarryStrategy.MoneyPlan,
+				candleInfo,
+				malScoreMap, coinName)
+
+			gLogger.Printf("최대주문 금액 : %f, 주문요청 금액 : %f",
+				gConfig.LarryStrategy.OrderAmount,
+				orderAmount)
+
 			if candleInfo[0].TradePrice >= bidValue {
 				// 매수 주문 실행.
 				// priceStr :=  fmt.Sprintf("%.8f", bidValue)
 				priceStr := upbitTool.GetPriceCanOrder(bidValue)
 
-				orderAmount := getOrderAmount(gConfig.LarryStrategy.OrderAmount,
-					gConfig.LarryStrategy.MoneyPlan,
-					candleInfo,
-					malScoreMap, coinName)
 				// orderAmount := gConfig.LarryStrategy.OrderAmount * malScoreMap[coinName]
 				// volumeStr := fmt.Sprintf("%.8f", gConfig.LarryStrategy.OrderAmount/bidValue)
 
@@ -540,11 +553,15 @@ func getOrderAmount(defaultAmount float64,
 	moneyPlan float64,
 	candles []*types.DayCandle,
 	malScoreMap map[string]float64,
-	coinName string) (orderAmount float64){
+	coinName string) (
+	orderAmount float64,
+	moneyPlanRate float64) {
 
 	const MAX_INDEX = 5
 
 	orderAmount = 0.0
+	moneyPlanRate = 0.0
+
 	if malScore, exist := malScoreMap[coinName]; exist {
 
 		// 5일간 평균 변동성 구하기
@@ -562,16 +579,15 @@ func getOrderAmount(defaultAmount float64,
 		// prevVar := (candles[1].HighPrice - candles[1].LowPrice)/candles[0].TradePrice
 		avrVar := float64( avrVarSum / 5)
 
-		moneyPlanRate := (moneyPlan/100)/avrVar
+		moneyPlanRate = (moneyPlan/100)/avrVar
 
 		orderAmount = defaultAmount * malScore * moneyPlanRate
 
-		gLogger.Printf("평균 변동성 : %.2f, 자금관리 비율 : %.2f, 이평스코어 : %.2f, 목표금액 : %f\n",
+		gLogger.Printf("평균 변동성 : %.2f, 자금관리 비율 : %.2f, 이평스코어 : %.2f\n",
 			avrVar,
 			moneyPlanRate,
-			malScore,
-			orderAmount)
-		
+			malScore)
+
 		if orderAmount > defaultAmount {
 			orderAmount = defaultAmount
 		}
